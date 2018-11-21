@@ -18,12 +18,17 @@ package io.spring.initializr.generator;
 
 import java.util.stream.Stream;
 
+import io.spring.initializr.generator.language.Language;
+import io.spring.initializr.generator.packaging.Packaging;
+import io.spring.initializr.generator.spring.build.BuildCustomizer;
+import io.spring.initializr.generator.spring.build.MetadataBuildItemMapper;
+import io.spring.initializr.generator.version.Version;
+import io.spring.initializr.generator.version.VersionProperty;
 import io.spring.initializr.metadata.BillOfMaterials;
 import io.spring.initializr.metadata.Dependency;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.test.generator.ProjectAssert;
 import io.spring.initializr.test.metadata.InitializrMetadataTestBuilder;
-import io.spring.initializr.util.VersionProperty;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -35,7 +40,7 @@ import org.springframework.core.io.ClassPathResource;
  *
  * @author Stephane Nicoll
  */
-class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
+class ProjectGeneratorBuildTests extends AbstractProjectGenerationTests {
 
 	public static Stream<Arguments> parameters() {
 		return Stream.of(Arguments.arguments("maven", "pom.xml"),
@@ -62,9 +67,7 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 
 	private void testCurrentGenerationJar(String language, String build,
 			String fileName) {
-		ProjectRequest request = createProjectRequestForType(build);
-		request.setLanguage(language);
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject(language, build, "2.1.1.RELEASE");
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + language + "/standard/" + getAssertFileName(fileName)));
 	}
@@ -89,10 +92,12 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 
 	private void testCurrentGenerationWar(String language, String build,
 			String fileName) {
-		ProjectRequest request = createProjectRequestForType(build, "web");
-		request.setPackaging("war");
-		request.setLanguage(language);
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject(language, build, "2.1.1.RELEASE",
+				(description) -> {
+					description.addDependency("web",
+							MetadataBuildItemMapper.toDependency(WEB));
+					description.setPackaging(Packaging.forId("war"));
+				});
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + language + "/standard/war-" + getAssertFileName(fileName)));
 	}
@@ -117,10 +122,7 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 
 	private void testPreviousGenerationJar(String language, String build,
 			String fileName) {
-		ProjectRequest request = createProjectRequestForType(build);
-		request.setLanguage(language);
-		request.setBootVersion("1.5.18.RELEASE");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject(language, build, "1.5.18.RELEASE");
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + language + "/previous/" + getAssertFileName(fileName)));
 	}
@@ -128,10 +130,8 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 	@ParameterizedTest
 	@MethodSource("parameters")
 	public void kotlinJava11(String build, String fileName) {
-		ProjectRequest request = createProjectRequestForType(build);
-		request.setLanguage("kotlin");
-		request.setJavaVersion("11");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("kotlin", build, "2.1.1.RELEASE",
+				(description) -> description.setLanguage(Language.forId("kotlin", "11")));
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + build + "/kotlin-java11-" + getAssertFileName(fileName)));
 	}
@@ -139,12 +139,18 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 	@ParameterizedTest
 	@MethodSource("parameters")
 	public void versionOverride(String build, String fileName) {
-		ProjectRequest request = createProjectRequestForType(build, "web");
-		request.getBuildProperties().getVersions().put(
-				VersionProperty.of("spring-foo.version", false), () -> "0.1.0.RELEASE");
-		request.getBuildProperties().getVersions()
-				.put(VersionProperty.of("spring-bar.version"), () -> "0.2.0.RELEASE");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("java", build, "2.1.1.RELEASE",
+				(description) -> description.addDependency("web",
+						MetadataBuildItemMapper.toDependency(WEB)),
+				(projectGenerationContext) -> projectGenerationContext
+						.registerBean(BuildCustomizer.class, () -> (projectBuild) -> {
+							projectBuild.addVersionProperty(
+									VersionProperty.of("spring-foo.version", false),
+									"0.1.0.RELEASE");
+							projectBuild.addVersionProperty(
+									VersionProperty.of("spring-bar.version"),
+									"0.2.0.RELEASE");
+						}));
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + build + "/version-override-" + getAssertFileName(fileName)));
 	}
@@ -158,9 +164,11 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 		bom.setVersionProperty("foo.version");
 		InitializrMetadata metadata = InitializrMetadataTestBuilder.withDefaults()
 				.addDependencyGroup("foo", foo).addBom("the-bom", bom).build();
-		applyMetadata(metadata);
-		ProjectRequest request = createProjectRequestForType(build, "foo");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("java", build, "2.1.1.RELEASE",
+				(description) -> {
+					description.addDependency("foo",
+							MetadataBuildItemMapper.toDependency(foo));
+				}, metadata);
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + build + "/bom-property-" + getAssertFileName(fileName)));
 	}
@@ -169,14 +177,21 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 	@MethodSource("parameters")
 	public void compileOnlyDependency(String build, String fileName) {
 		Dependency foo = Dependency.withId("foo", "org.acme", "foo");
+		Dependency dataJpa = Dependency.withId("data-jpa", "org.springframework.boot",
+				"spring-boot-starter-data-jpa");
 		foo.setScope(Dependency.SCOPE_COMPILE_ONLY);
 		InitializrMetadata metadata = InitializrMetadataTestBuilder.withDefaults()
 				.addDependencyGroup("core", "web", "data-jpa")
 				.addDependencyGroup("foo", foo).build();
-		applyMetadata(metadata);
-		ProjectRequest request = createProjectRequestForType(build, "foo", "web",
-				"data-jpa");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("java", build, "2.1.1.RELEASE",
+				(description) -> {
+					description.addDependency("foo",
+							MetadataBuildItemMapper.toDependency(foo));
+					description.addDependency("web",
+							MetadataBuildItemMapper.toDependency(WEB));
+					description.addDependency("data-jpa",
+							MetadataBuildItemMapper.toDependency(dataJpa));
+				}, metadata);
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource("project/"
 				+ build + "/compile-only-dependency-" + getAssertFileName(fileName)));
 	}
@@ -186,15 +201,22 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 	public void annotationProcessorDependency(String build, String fileName) {
 		Dependency annotationProcessor = Dependency.withId("configuration-processor",
 				"org.springframework.boot", "spring-boot-configuration-processor");
+		Dependency dataJpa = Dependency.withId("data-jpa", "org.springframework.boot",
+				"spring-boot-starter-data-jpa");
 		annotationProcessor.setScope(Dependency.SCOPE_ANNOTATION_PROCESSOR);
 		InitializrMetadata metadata = InitializrMetadataTestBuilder.withDefaults()
 				.addDependencyGroup("core", "web", "data-jpa")
 				.addDependencyGroup("configuration-processor", annotationProcessor)
 				.build();
-		applyMetadata(metadata);
-		ProjectRequest request = createProjectRequestForType(build,
-				"configuration-processor", "web", "data-jpa");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("java", build, "2.1.1.RELEASE",
+				(description) -> {
+					description.addDependency("configuration-processor",
+							MetadataBuildItemMapper.toDependency(annotationProcessor));
+					description.addDependency("web",
+							MetadataBuildItemMapper.toDependency(WEB));
+					description.addDependency("data-jpa",
+							MetadataBuildItemMapper.toDependency(dataJpa));
+				}, metadata);
 		project.sourceCodeAssert(fileName)
 				.equalsTo(new ClassPathResource(
 						"project/" + build + "/annotation-processor-dependency-"
@@ -215,13 +237,13 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 		BillOfMaterials fooBom = BillOfMaterials.create("org.acme", "foo-bom", "1.0");
 		fooBom.setOrder(20);
 		fooBom.getAdditionalBoms().add("biz-bom");
-
 		InitializrMetadata metadata = InitializrMetadataTestBuilder.withDefaults()
 				.addDependencyGroup("foo", foo).addBom("foo-bom", fooBom)
 				.addBom("bar-bom", barBom).addBom("biz-bom", bizBom).build();
-		applyMetadata(metadata);
-		ProjectRequest request = createProjectRequestForType(build, "foo");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject(
+				"java", build, "2.1.1.RELEASE", (description) -> description
+						.addDependency("foo", MetadataBuildItemMapper.toDependency(foo)),
+				metadata);
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + build + "/bom-ordering-" + getAssertFileName(fileName)));
 	}
@@ -240,9 +262,13 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 				.addRepository("bar-repository", "bar-repo", "https://example.com/bar",
 						true)
 				.build();
-		applyMetadata(metadata);
-		ProjectRequest request = createProjectRequestForType(build, "foo", "bar");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("java", build, "2.1.1.RELEASE",
+				(description) -> {
+					description.addDependency("foo",
+							MetadataBuildItemMapper.toDependency(foo));
+					description.addDependency("bar",
+							MetadataBuildItemMapper.toDependency(bar));
+				}, metadata);
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource(
 				"project/" + build + "/repositories-" + getAssertFileName(fileName)));
 	}
@@ -253,18 +279,14 @@ class ProjectGeneratorBuildTests extends AbstractProjectGeneratorTests {
 		Dependency foo = Dependency.withId("foo", "org.acme", "foo");
 		InitializrMetadata metadata = InitializrMetadataTestBuilder.withDefaults()
 				.addDependencyGroup("test", foo).build();
-		applyMetadata(metadata);
-		ProjectRequest request = createProjectRequestForType(build, "foo");
-		request.setBootVersion("2.2.0.M1");
-		ProjectAssert project = generateProject(request);
+		ProjectAssert project = generateProject("java", build, "2.1.1.RELEASE",
+				(description) -> {
+					description.setPlatformVersion(Version.parse("2.2.0.M1"));
+					description.addDependency("foo",
+							MetadataBuildItemMapper.toDependency(foo));
+				}, metadata);
 		project.sourceCodeAssert(fileName).equalsTo(new ClassPathResource("project/"
 				+ build + "/repositories-milestone-" + getAssertFileName(fileName)));
-	}
-
-	public ProjectRequest createProjectRequestForType(String build, String... styles) {
-		ProjectRequest request = super.createProjectRequest(styles);
-		request.setType(build + "-project");
-		return request;
 	}
 
 	private String getAssertFileName(String fileName) {

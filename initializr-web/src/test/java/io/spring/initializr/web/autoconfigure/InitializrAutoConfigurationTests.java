@@ -23,6 +23,8 @@ import io.spring.initializr.metadata.DependencyMetadataProvider;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.util.TemplateRenderer;
 import io.spring.initializr.web.project.MainController;
+import io.spring.initializr.web.project.ProjectGenerationInvoker;
+import io.spring.initializr.web.project.ProjectRequestToDescriptionConverter;
 import io.spring.initializr.web.ui.UiController;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -180,6 +182,8 @@ class InitializrAutoConfigurationTests {
 								InitializrAutoConfiguration.class));
 		webContextRunner.run((context) -> {
 			assertThat(context).hasSingleBean(InitializrWebConfig.class);
+			assertThat(context).hasSingleBean(ProjectGenerationInvoker.class);
+			assertThat(context).hasSingleBean(ProjectRequestToDescriptionConverter.class);
 			assertThat(context).hasSingleBean(MainController.class);
 			assertThat(context).hasSingleBean(UiController.class);
 		});

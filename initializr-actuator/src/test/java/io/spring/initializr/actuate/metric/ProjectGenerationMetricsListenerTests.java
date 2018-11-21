@@ -16,13 +16,13 @@
 
 package io.spring.initializr.actuate.metric;
 
-import java.util.Arrays;
-
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.spring.initializr.actuate.test.MetricsAssert;
 import io.spring.initializr.generator.ProjectFailedEvent;
 import io.spring.initializr.generator.ProjectGeneratedEvent;
 import io.spring.initializr.generator.ProjectRequest;
+import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
+import io.spring.initializr.generator.spring.build.MetadataBuildItemResolver;
 import io.spring.initializr.metadata.Dependency;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.test.metadata.InitializrMetadataTestBuilder;
@@ -52,7 +52,7 @@ class ProjectGenerationMetricsListenerTests {
 	void projectGenerationCount() {
 		ProjectRequest request = initialize();
 		request.resolve(this.metadata);
-		fireProjectGeneratedEvent(request);
+		fireProjectGeneratedEvent(request, createBuild());
 		this.metricsAssert.hasValue(1, "initializr.requests");
 	}
 
@@ -68,9 +68,11 @@ class ProjectGenerationMetricsListenerTests {
 	@Test
 	void dependencies() {
 		ProjectRequest request = initialize();
-		request.getStyle().addAll(Arrays.asList("security", "spring-data"));
 		request.resolve(this.metadata);
-		fireProjectGeneratedEvent(request);
+		MavenBuild build = createBuild();
+		build.dependencies().add("security");
+		build.dependencies().add("spring-data");
+		fireProjectGeneratedEvent(request, build);
 		this.metricsAssert.hasValue(1, "initializr.dependency.security",
 				"initializr.dependency.spring-data");
 	}
@@ -86,10 +88,11 @@ class ProjectGenerationMetricsListenerTests {
 	@Test
 	void resolvedWebDependency() {
 		ProjectRequest request = initialize();
-		request.getStyle().add("spring-data");
 		request.setPackaging("war");
 		request.resolve(this.metadata);
-		fireProjectGeneratedEvent(request);
+		MavenBuild build = createBuild();
+		build.dependencies().add("spring-data");
+		fireProjectGeneratedEvent(request, build);
 		this.metricsAssert.hasValue(1, "initializr.dependency.web",
 				"initializr.dependency.spring-data");
 	}
@@ -103,9 +106,10 @@ class ProjectGenerationMetricsListenerTests {
 				.addDependencyGroup("core", dependency).build();
 		ProjectRequest request = new ProjectRequest();
 		request.initialize(metadata);
-		request.getStyle().add("foo-old");
 		request.resolve(metadata);
-		fireProjectGeneratedEvent(request);
+		MavenBuild build = createBuild();
+		build.dependencies().add("foo-old");
+		fireProjectGeneratedEvent(request, build);
 		this.metricsAssert.hasValue(1, "initializr.dependency.foo"); // standard id is
 																		// used
 	}
@@ -216,16 +220,16 @@ class ProjectGenerationMetricsListenerTests {
 	@Test
 	void collectAllMetrics() {
 		ProjectRequest request = initialize();
-		request.getStyle().addAll(Arrays.asList("web", "security"));
 		request.setType("gradle-project");
 		request.setPackaging("jar");
 		request.setJavaVersion("1.6");
 		request.setLanguage("groovy");
 		request.setBootVersion("1.5.17.RELEASE");
 		request.getParameters().put("user-agent", "SpringBootCli/1.3.0.RELEASE");
-
-		request.resolve(this.metadata);
-		fireProjectGeneratedEvent(request);
+		MavenBuild build = createBuild();
+		build.dependencies().add("web");
+		build.dependencies().add("security");
+		fireProjectGeneratedEvent(request, build);
 		this.metricsAssert.hasValue(1, "initializr.requests", "initializr.dependency.web",
 				"initializr.dependency.security", "initializr.type.gradle-project",
 				"initializr.packaging.jar", "initializr.java_version.1_6",
@@ -236,24 +240,37 @@ class ProjectGenerationMetricsListenerTests {
 	@Test
 	void incrementMetrics() {
 		ProjectRequest request = initialize();
-		request.getStyle().addAll(Arrays.asList("security", "spring-data"));
-		request.resolve(this.metadata);
-		fireProjectGeneratedEvent(request);
+		MavenBuild mavenBuild = createBuild();
+		mavenBuild.dependencies().add("security");
+		mavenBuild.dependencies().add("spring-data");
+		fireProjectGeneratedEvent(request, mavenBuild);
 		this.metricsAssert.hasValue(1, "initializr.requests",
 				"initializr.dependency.security", "initializr.dependency.spring-data");
 
 		ProjectRequest anotherRequest = initialize();
-		anotherRequest.getStyle().addAll(Arrays.asList("web", "spring-data"));
-		anotherRequest.resolve(this.metadata);
-		fireProjectGeneratedEvent(anotherRequest);
+		MavenBuild anotherBuild = createBuild();
+		anotherBuild.dependencies().add("web");
+		anotherBuild.dependencies().add("spring-data");
+		fireProjectGeneratedEvent(anotherRequest, anotherBuild);
 		this.metricsAssert.hasValue(2, "initializr.dependency.spring-data",
 				"initializr.dependency.spring-data");
 		this.metricsAssert.hasValue(1, "initializr.dependency.web",
 				"initializr.dependency.security");
 	}
 
+	private MavenBuild createBuild() {
+		return new MavenBuild(new MetadataBuildItemResolver(this.metadata));
+	}
+
 	private void fireProjectGeneratedEvent(ProjectRequest projectRequest) {
-		this.listener.onGeneratedProject(new ProjectGeneratedEvent(projectRequest));
+		this.listener.onGeneratedProject(
+				new ProjectGeneratedEvent(projectRequest, createBuild(), this.metadata));
+	}
+
+	private void fireProjectGeneratedEvent(ProjectRequest projectRequest,
+			MavenBuild mavenBuild) {
+		this.listener.onGeneratedProject(
+				new ProjectGeneratedEvent(projectRequest, mavenBuild, this.metadata));
 	}
 
 	private void fireProjectFailedEvent(ProjectRequest projectRequest) {

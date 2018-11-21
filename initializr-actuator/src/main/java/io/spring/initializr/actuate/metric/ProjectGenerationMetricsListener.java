@@ -22,7 +22,10 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.spring.initializr.generator.ProjectFailedEvent;
 import io.spring.initializr.generator.ProjectGeneratedEvent;
 import io.spring.initializr.generator.ProjectRequest;
+import io.spring.initializr.generator.buildsystem.Build;
+import io.spring.initializr.generator.spring.build.BuildMetadataResolver;
 import io.spring.initializr.metadata.Dependency;
+import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.util.Agent;
 
 import org.springframework.context.event.EventListener;
@@ -44,18 +47,31 @@ public class ProjectGenerationMetricsListener {
 
 	@EventListener
 	public void onGeneratedProject(ProjectGeneratedEvent event) {
+		Build build = event.getBuild();
+		handleSuccessDependencies(build, event.getMetadata());
 		handleProjectRequest(event.getProjectRequest());
 	}
 
 	@EventListener
 	public void onFailedProject(ProjectFailedEvent event) {
-		handleProjectRequest(event.getProjectRequest());
+		ProjectRequest request = event.getProjectRequest();
+		handleDependencies(request);
+		handleProjectRequest(request);
 		increment(key("failures"));
+	}
+
+	protected void handleSuccessDependencies(Build build, InitializrMetadata metadata) {
+		BuildMetadataResolver resolver = new BuildMetadataResolver(metadata);
+		resolver.dependencies(build).forEach((it) -> {
+			if (!ProjectRequest.DEFAULT_STARTER.equals(it.getId())) {
+				String id = sanitize(it.getId());
+				increment(key("dependency." + id));
+			}
+		});
 	}
 
 	protected void handleProjectRequest(ProjectRequest request) {
 		increment(key("requests")); // Total number of requests
-		handleDependencies(request);
 		handleType(request);
 		handleJavaVersion(request);
 		handlePackaging(request);

@@ -16,6 +16,9 @@
 
 package io.spring.initializr.generator;
 
+import io.spring.initializr.generator.buildsystem.Build;
+import io.spring.initializr.metadata.InitializrMetadata;
+
 /**
  * Event published when a new project has been generated successfully.
  *
@@ -23,8 +26,23 @@ package io.spring.initializr.generator;
  */
 public class ProjectGeneratedEvent extends ProjectRequestEvent {
 
-	public ProjectGeneratedEvent(ProjectRequest projectRequest) {
+	private final Build build;
+
+	private final InitializrMetadata metadata;
+
+	public ProjectGeneratedEvent(ProjectRequest projectRequest, Build build,
+			InitializrMetadata metadata) {
 		super(projectRequest);
+		this.build = build;
+		this.metadata = metadata;
+	}
+
+	public Build getBuild() {
+		return this.build;
+	}
+
+	public InitializrMetadata getMetadata() {
+		return this.metadata;
 	}
 
 }

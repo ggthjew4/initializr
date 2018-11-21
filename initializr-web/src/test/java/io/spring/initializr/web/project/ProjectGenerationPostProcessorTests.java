@@ -16,9 +16,10 @@
 
 package io.spring.initializr.web.project;
 
-import io.spring.initializr.generator.ProjectRequest;
-import io.spring.initializr.generator.ProjectRequestPostProcessor;
-import io.spring.initializr.metadata.InitializrMetadata;
+import io.spring.initializr.generator.language.java.JavaLanguage;
+import io.spring.initializr.generator.project.ProjectDescription;
+import io.spring.initializr.generator.project.ProjectDescriptionCustomizer;
+import io.spring.initializr.generator.version.Version;
 import io.spring.initializr.web.AbstractInitializrControllerIntegrationTests;
 import io.spring.initializr.web.project.ProjectGenerationPostProcessorTests.ProjectRequestPostProcessorConfiguration;
 import org.junit.jupiter.api.Test;
@@ -26,13 +27,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.core.annotation.Order;
 import org.springframework.test.context.ActiveProfiles;
 
 @ActiveProfiles("test-default")
 @Import(ProjectRequestPostProcessorConfiguration.class)
 class ProjectGenerationPostProcessorTests
 		extends AbstractInitializrControllerIntegrationTests {
+
+	// TODO: rename test class
 
 	@Test
 	void postProcessorsInvoked() {
@@ -45,26 +47,32 @@ class ProjectGenerationPostProcessorTests
 	static class ProjectRequestPostProcessorConfiguration {
 
 		@Bean
-		@Order(2)
-		ProjectRequestPostProcessor secondPostProcessor() {
-			return new ProjectRequestPostProcessor() {
+		public ProjectDescriptionCustomizer secondPostProcessor() {
+			return new ProjectDescriptionCustomizer() {
 				@Override
-				public void postProcessBeforeResolution(ProjectRequest request,
-						InitializrMetadata metadata) {
-					request.setJavaVersion("1.7");
+				public void customize(ProjectDescription description) {
+					description.setLanguage(new JavaLanguage("1.7"));
+				}
+
+				@Override
+				public int getOrder() {
+					return 2;
 				}
 			};
 		}
 
 		@Bean
-		@Order(1)
-		ProjectRequestPostProcessor firstPostProcessor() {
-			return new ProjectRequestPostProcessor() {
+		public ProjectDescriptionCustomizer firstPostProcessor() {
+			return new ProjectDescriptionCustomizer() {
 				@Override
-				public void postProcessBeforeResolution(ProjectRequest request,
-						InitializrMetadata metadata) {
-					request.setJavaVersion("1.2");
-					request.setBootVersion("2.2.3.RELEASE");
+				public void customize(ProjectDescription description) {
+					description.setLanguage(new JavaLanguage("1.2"));
+					description.setPlatformVersion(Version.parse("2.2.3.RELEASE"));
+				}
+
+				@Override
+				public int getOrder() {
+					return 1;
 				}
 			};
 		}

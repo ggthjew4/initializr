@@ -17,6 +17,8 @@
 package io.spring.initializr.actuate.stat;
 
 import io.spring.initializr.generator.ProjectRequest;
+import io.spring.initializr.generator.buildsystem.Build;
+import io.spring.initializr.generator.buildsystem.maven.MavenBuild;
 import io.spring.initializr.metadata.InitializrMetadata;
 import io.spring.initializr.metadata.InitializrMetadataProvider;
 import io.spring.initializr.metadata.SimpleInitializrMetadataProvider;
@@ -45,6 +47,10 @@ abstract class AbstractInitializrStatTests {
 
 	public InitializrMetadata getMetadata() {
 		return this.metadata;
+	}
+
+	public Build createBuild() {
+		return new MavenBuild();
 	}
 
 }
